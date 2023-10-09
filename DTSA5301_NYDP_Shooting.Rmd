@@ -1,0 +1,538 @@
+---
+title: "NYPD Shooting Incident Data Analysis"
+date: "2023-09-27"
+output:
+  html_document: 
+    toc: yes
+    highlight: espresso
+    theme: readable
+---
+
+## Download Links
+
+You can download the reproducible .RMD document from which this knitted HTML was generated from the links below.
+
+- [DTSA5301_NYDP_Shooting.Rmd](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_NYDP_Shooting.Rmd){target="_blank"} ([Raw](https://raw.githubusercontent.com/estersstirrer/DTSA5301/main/DTSA5301_NYDP_Shooting.Rmd){target="_blank"})
+- [DTSA5301_NYDP_Shooting.html](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_NYDP_Shooting.html){target="_blank"} ([Raw](https://raw.githubusercontent.com/estersstirrer/DTSA5301/main/DTSA5301_NYDP_Shooting.html){target="_blank"})
+
+If your browser does not handle the above links well, please visit [my github.com repository](https://github.com/estersstirrer/DTSA5301/){target="_blank"} to find and grab [the RMD file](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_NYDP_Shooting.Rmd){target="_blank"} from there.
+
+## Abstract
+
+Reproducibility on data analysis with R is feasible, but the fundamental knowledge, skills, and careful implementations are required.
+
+Although the NYPD Shooting Incident Data revealed a significant increase beginning in May 2020 -- a rise potentially attributed to the COVID-19 pandemic, the BLM Movement, or both -- no discernible factors have been identified through this analysis with available data on victims and perpetrators. A more comprehensive analysis incorporating additional data is necessary to determine the underlying mechanism of this spike.
+
+********************************************************************************
+
+## Library Dependencies
+
+For this project, I need only basic libraries, `'tidyverse'` and `'lubridate'`, just as usual.
+
+```{r message=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+********************************************************************************
+
+## Data Preparation
+
+### Importing NYPD Shooting Incident Data (Historic)
+
+This publicly available government-provided data lists all shooting incidents in New York from **2006** to the end of **2022**. Each record represents a shooting incident in New York City and includes information about the incident, location, and time of occurrence.
+It also provides information related to suspect and victim demographics.
+
+We should import the data directly from [the U.S. Government's Open Data Official Site](https://catalog.data.gov/dataset) in order to maintain this report **reproducible**.
+
+```{r}
+csv_data <- read.csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+In this report, I keep this NYPD Shooting Incident Data in a `tibble` object for efficient manipulation.
+
+```{r}
+nypd_all <- tibble(csv_data)
+nypd_all
+```
+
+### Tidying and Transforming
+
+To demonstrate how we can complete all steps in the data science process, I will tidy up and transform this NYPD Shooting Incident Data step-by-step. Let's see how it goes.
+
+#### Narrowing Down
+
+First, since I will focus only on the information in the following fields in this paper, I will remove the others.
+
+- `OCCUR_DATE` - Exact date of the shooting incident
+- `BORO` - Borough where the shooting incident occurred
+- `STATISTICAL_MURDER_FLAG` - Shooting resulted in the victim's death which would be counted as a murder
+- `VIC_SEX` - Victim's sex description
+- `VIC_RACE` - Victim's race description
+- `PERP_SEX` - Perpetrator's sex description
+- `PERP_RACE` - Perpetrator's race description
+
+```{r}
+nypd_selected <- nypd_all %>%
+  select(OCCUR_DATE,
+         BORO,
+         STATISTICAL_MURDER_FLAG,
+         VIC_SEX,
+         VIC_RACE,
+         PERP_SEX,
+         PERP_RACE)
+nypd_selected
+```
+
+#### Renaming
+
+It's my preference, but I redefine the column names using camel case notation to make it easier to type and handle.
+
+```{r}
+nypd_renamed <- nypd_selected %>%
+  rename(Date = OCCUR_DATE,
+         Borough = BORO,
+         Murder = STATISTICAL_MURDER_FLAG,
+         VicSex = VIC_SEX,
+         VicRace = VIC_RACE,
+         PerpSex = PERP_SEX,
+         PerpRace = PERP_RACE)
+nypd_renamed
+```
+
+#### Cleaning
+
+Attribute information for many victims and perpetrators is not standardized. The values, especially the missing values, are not recorded consistently; there are just empty strings, `NA`, or listed as `"UNKNOWN"` or `"(null)"`. Therefore, it is necessary to normalize the information before getting into the data analysis in this report.
+
+```{r}
+nypd_cleaned <- nypd_renamed %>%
+  mutate(Borough = case_when(Borough == "" ~ "Unknown",
+                             is.na(Borough) ~ "Unknown",
+                             TRUE ~ Borough),
+         VicRace = case_when(VicRace == "" ~ "Unknown",
+                             tolower(VicRace) == "(null)" ~ "Unknown",
+                             tolower(VicRace) == "unknown" ~ "Unknown",
+                             is.na(VicRace) | is.null(VicRace) ~ "Unknown",
+                             TRUE ~ VicRace),
+         VicSex = case_when(VicSex == "M" ~ "Male",
+                            VicSex == "F" ~ "Female",
+                            is.na(VicSex) | is.null(VicSex) ~ "Unknown",
+                            TRUE ~ "Unknown"),
+         PerpRace = case_when(PerpRace == "" ~ "Unknown",
+                             tolower(PerpRace) == "(null)" ~ "Unknown",
+                             tolower(PerpRace) == "unknown" ~ "Unknown",
+                             is.na(PerpRace) | is.null(PerpRace) ~ "Unknown",
+                             TRUE ~ PerpRace),
+         PerpSex = case_when(PerpSex == "M" ~ "Male",
+                             PerpSex == "F" ~ "Female",
+                             is.na(PerpSex) | is.null(PerpSex) ~ "Unknown",
+                             TRUE ~ "Unknown"))
+nypd_cleaned
+```
+
+#### Type Casting
+
+We need to have the `Date` column as a type of `date` and the `Murder` column as `logical`, as we currently have both as `character`.
+
+```{r}
+nypd_typed <- nypd_cleaned %>%
+  mutate(Date = mdy(Date),
+         Murder = (Murder == "true"))
+nypd_typed
+```
+
+#### Sorting
+
+As this is a time series data, I want it sorted in time-ascending order.
+
+```{r}
+nypd_sorted <- arrange(nypd_typed, Date, Borough)
+```
+
+Finally, we have got the shooting data tidied up entirely as follows:
+
+```{r eval=TRUE, echo=FALSE, results="show"}
+nypd_sorted
+```
+
+********************************************************************************
+
+## Analyzing Data with Visualization
+
+### Visualization of the Number of Shootings in New York
+
+First, let's visualize the number of shootings by plotting them over time every month and see what we get.
+
+```{r}
+nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month) %>%
+  summarize(Overall = n(),
+            Murder = sum(Murder),
+            "Non Murder" = (Overall - Murder)) %>%
+  pivot_longer(cols = c(Overall, Murder, "Non Murder"),
+               names_to = "Kind",
+               values_to = "Count") %>%
+  ggplot(aes(x = Month, y = Count, color = Kind)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_vline(xintercept = ymd('2020-04-01'), linetype = "dashed") +
+  annotate(geom="text", x = ymd('2020-04-01'), y = 340, label="COVID-19 & BLM Movement") +
+  labs(title = "Shootings in New York per Month (2006 - 2022)",
+       x = "Date",
+       y = "Number of Shootings",
+       color = "Shooting Result") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+### Analyzing the Number of Shootings in New York
+
+#### Overall Trends
+
+As illustrated in the graph above, there has been a notable increase in shootings since May 2020, marked by a sustained rise in incidents.
+
+From a macroscopic viewpoint, this escalation can potentially be ascribed to the onset of the COVID-19 pandemic, the BLM Movement, or both, emerging around May 2020 in the United States. However, the specific factors within these events that may have directly contributed to the increase in shooting incidents remain indistinct in this visualization. A more detailed factor analysis is essential to pinpoint the precise catalysts for this trend.
+
+#### Shooting Victims and Perpetrators by Race, and Sex
+
+To find more detailed changes in the differences before and after the pandemic, I will plot the shootings by victims' and perpetrators' attributes (sex, race) one by one, separately.
+
+##### Plotting By Race
+
+```{r message=FALSE, warning=FALSE}
+plot_ShootingVictimsByRace <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month, VicRace) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = Month, y = Count, color = VicRace)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_vline(xintercept = ymd('2020-04-01'), linetype = "dashed") +
+  annotate(geom="text", x = ymd('2020-04-01'), y = 340, label="COVID-19 & BLM Movement") +
+  labs(title = "Shooting Victims by Race in New York per Month (2006 - 2022)",
+       x = "Date",
+       y = "Number of Shootings",
+       color = "Victim's Race") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+plot_ShootingPerpetratorsByRace <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month, PerpRace) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = Month, y = Count, color = PerpRace)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_vline(xintercept = ymd('2020-04-01'), linetype = "dashed") +
+  annotate(geom="text", x = ymd('2020-04-01'), y = 340, label="COVID-19 & BLM Movement") +
+  labs(title = "Shooting Perpetrators by Race in New York per Month (2006 - 2022)",
+       x = "Date",
+       y = "Number of Shootings",
+       color = "Perpetrator's Race") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+df <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month) %>%
+  summarize(Overall = n(),
+            VicWhiteHispanic = sum(VicRace == "WHITE HISPANIC"),
+            VicBlack = sum(VicRace == "BLACK"),
+            VicBlackHispanic = sum(VicRace == "BLACK HISPANIC"),
+            VicWhite = sum(VicRace == "WHITE"),
+            VicAsianPacificIslander =
+              sum(VicRace == "ASIAN / PACIFIC ISLANDER"),
+            VicNativeAmericanNativeAlaskan =
+              sum(VicRace == "AMERICAN INDIAN/ALASKAN NATIVE")) %>%
+  mutate(BeforePandemic = (Month < ymd("2020-04-01")))
+
+df_before <- filter(df, BeforePandemic == TRUE)
+df_after <- filter(df, BeforePandemic == FALSE)
+
+plot_MonthlyShootingBlackVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicBlack, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicBlack, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicBlack, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicBlack, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Black Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (Black)",
+       color = "Victim's Race")
+
+plot_MonthlyShootingBlackHispanicVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicBlackHispanic, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicBlackHispanic, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicBlackHispanic, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicBlackHispanic, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Black Hispanic Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (Black Hispanic)",
+       color = "Victim's Race")
+
+plot_MonthlyShootingWhiteVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicWhite, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicWhite, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicWhite, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicWhite, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting White Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (White)",
+       color = "Victim's Race")
+
+plot_MonthlyShootingAsianPacificIslanderVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicAsianPacificIslander, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicAsianPacificIslander, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicAsianPacificIslander, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicAsianPacificIslander, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Asian/Pacific Islander Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (Asian/Pacific Islander)",
+       color = "Victim's Race")
+
+plot_MonthlyShootingNativeAmericanNativeAlaskanVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicNativeAmericanNativeAlaskan, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicNativeAmericanNativeAlaskan, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicNativeAmericanNativeAlaskan, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicNativeAmericanNativeAlaskan, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Native American/Native Alaskan Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (Native American/Native Alaskan)",
+       color = "Victim's Race")
+
+plot_ShootingVictimsByRace
+plot_ShootingPerpetratorsByRace
+plot_MonthlyShootingBlackVictims
+plot_MonthlyShootingBlackHispanicVictims
+plot_MonthlyShootingWhiteVictims
+plot_MonthlyShootingAsianPacificIslanderVictims
+plot_MonthlyShootingNativeAmericanNativeAlaskanVictims
+```
+
+Please note that every <span style="color:green">**green**</span> point in the **Shooting Victims by Month** graphs for each Race represents the observed data **before** the COVID-19 Pandemic/BLM Movement, whereas every <span style="color:red">**red**</span> point in the chart represents the data **after** the Pandemic.
+
+Whereas the points represent the actual observed data, the **solid lines** drawn over observed data points in those graphs show the approximate prediction from the linear regression models.
+
+We can see no significant difference between before and after the Pandemic in any graphs for any race.
+
+##### Plotting By Sex
+
+```{r message=FALSE, warning=FALSE}
+plot_ShootingVictimsBySex <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month, VicSex) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = Month, y = Count, color = VicSex)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_vline(xintercept = ymd('2020-04-01'), linetype = "dashed") +
+  annotate(geom="text", x = ymd('2020-04-01'), y = 340, label="COVID-19 & BLM Movement") +
+  labs(title = "Shooting Victims by Sex in New York per Month (2006 - 2022)",
+       x = "Date",
+       y = "Number of Shootings",
+       color = "Victim's Sex") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+plot_ShootingPerpetratorsBySex <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month, PerpSex) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = Month, y = Count, color = PerpSex)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_vline(xintercept = ymd('2020-04-01'), linetype = "dashed") +
+  annotate(geom="text", x = ymd('2020-04-01'), y = 340, label="COVID-19 & BLM Movement") +
+  labs(title = "Shooting Perpetrators by Sex in New York per Month (2006 - 2022)",
+       x = "Date",
+       y = "Number of Shootings",
+       color = "Perpetrator's Sex") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+
+df <- nypd_sorted %>%
+  mutate(Month = floor_date(Date, "month")) %>%
+  group_by(Month) %>%
+  summarize(Overall = n(),
+            VicFemale = sum(VicSex == "Female"),
+            VicMale = sum(VicSex == "Male")) %>%
+  mutate(BeforePandemic = (Month < ymd("2020-04-01")))
+
+df_before <- filter(df, BeforePandemic == TRUE)
+df_after <- filter(df, BeforePandemic == FALSE)
+
+plot_MonthlyShootingFemaleVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicFemale, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicFemale, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicFemale, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicFemale, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Female Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Sex)",
+       y = "Monthly Shooting Victims (Female)",
+       color = "Victim's Sex")
+
+plot_MonthlyShootingMaleVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicMale, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicMale, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicMale, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicMale, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting Male Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Sex)",
+       y = "Monthly Shooting Victims (Male)",
+       color = "Victim's Sex")
+
+plot_ShootingVictimsBySex
+plot_ShootingPerpetratorsBySex
+plot_MonthlyShootingFemaleVictims
+plot_MonthlyShootingMaleVictims
+```
+
+Like the previous section for Race, every <span style="color:green">**green**</span> point in the **Shooting Victims by Month** graphs for each Sex represents the observed data **before** the COVID-19 Pandemic/BLM Movement.
+In contrast, every <span style="color:red">**red**</span> point in the chart represents the data **after** the Pandemic.
+
+Whereas the points represent the actual observed data, the **solid lines** drawn over observed data points in those graphs show the approximate prediction from the linear regression models.
+
+We can see no significant difference between before and after the Pandemic in any graphs for  females and males.
+
+### Thoughts about the Possibility of the Root Cause
+
+From the analysis of the aspect of victims' and perpetrators' attributes, I have found nothing significant that could be attributed to the spike in shooting incidents in New York in May 2020. The race and sex ratios of victims and perpetrators did not change significantly.
+
+Conversely, I can also say that the NYPD Shooting Incident Data used in this analysis does not indicate that any particular factor rooted in a specific race or sex is responsible for the surge in New York shootings.
+
+Rather, other factors (social unrest, unemployment, etc.) may be the cause; thus, a larger-scale analysis that combines the data used in this analysis and other data is required.
+
+
+*****
+
+## Conclusion
+
+In this report, I demonstrated how we can import, tidy, visualize, and analyze open data available from the government site in a reproducible manner.
+I found the reproducibility possible but acknowledged that fundamental knowledge, basic skills, and meticulous implementations are necessary.
+
+Speaking of the findings from the data analysis, I have found nothing significant that could be attributed to the spike in the NY shootings in May 2020 from any of the attributes of victims and perpetrators.
+
+As mentioned, other factors (social unrest, unemployment, etc.) may be the reason. Therefore, a larger-scale analysis with the NYPD Shooting Incident Data and other reliable data is desired.
+
+*****
+
+## Bias Identification
+
+Eliminating bias in data analysis is challenging; this report is no exception. I assumed that the COVID-19 and/or the BLM Movement Pandemic caused the May 2020 spike in New York shootings and attempted to analyze the specific factors further.
+However, that assumption itself, while confident based on the majority of people's experience, is still a bias based on preconceived notions.
+However, even if the initial hypothesis contains bias, if we proceed with a thorough analysis of the specific factors, we will eventually arrive at the actual root cause of the phenomenon.
+So, I considered that assumption to be nothing more than a trigger and be acceptable in this report.
+
+Other biases could also be contained in the shooting data itself. For example, "race" in the NYPD shooting count data was classified into six categories, except those marked unknown.
+In reality, however, the classification of New Yorkers into six races needs to be revised and improved. Biases already infused in the first place during the compilation are even harder to correct or eliminate. Although this report does not explicitly address potential biases in the data, it is hoped that more reliable data will be collected and a more sophisticated analysis will be attempted.
+
+*****
+
+## APPENDIX
+
+### SessionInfo
+
+```{r}
+sessionInfo()
+```
+

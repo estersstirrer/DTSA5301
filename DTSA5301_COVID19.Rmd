@@ -1,0 +1,404 @@
+---
+title: "COVID-19 Data Analysis"
+date: "2023-10-01"
+output:
+  html_document: 
+    toc: yes
+    highlight: espresso
+    theme: readable
+---
+
+## Download Links
+
+You can download the reproducible .RMD document from which this knitted HTML was generated from the links below.
+
+- [DTSA5301_COVID19.Rmd](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_COVID19.Rmd){target="_blank"} ([Raw](https://raw.githubusercontent.com/estersstirrer/DTSA5301/main/DTSA5301_COVID19.Rmd){target="_blank"})
+- [DTSA5301_COVID19.html](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_COVID19.html){target="_blank"} ([Raw](https://raw.githubusercontent.com/estersstirrer/DTSA5301/main/DTSA5301_COVID19.html){target="_blank"})
+
+If your browser does not handle the above links well, please visit [my github.com repository](https://github.com/estersstirrer/DTSA5301/){target="_blank"} to find and grab [the RMD file](https://github.com/estersstirrer/DTSA5301/blob/main/DTSA5301_COVID19.Rmd){target="_blank"} from there.
+
+## Abstract
+
+In this report, I demonstrated how to import and process the daily US COVID-19 cases and deaths data available from the Johns Hopkins University GitHub Repository for visualization and analysis, maintaining reproducibility.
+
+Visualizing the COVID-19 data from several aspects, I observed that periodic prominent spikes in COVID-19 infections and deaths occurred repeatedly during the period. I also watched that per-state COVID-19 cases and fatalities in the US were almost purely related to the state population, with no significant differences between states.
+
+********************************************************************************
+
+## Library Dependencies
+
+For this project, I need only basic libraries, `'tidyverse'` and `'lubridate'`.
+
+```{r message=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+********************************************************************************
+
+## Data Preparation
+
+### Importing COVID-19 Data
+
+Johns Hopkins University provides daily time series summary tables incorporated from daily case reports, including confirmed, deceased, and recovered cases. The University compiled the two-time series tables for US-confirmed cases and deaths reported at the county level.
+
+In this analysis, I will focus on the following data from the United States reports, importing directly from [Johns Hopkins University's Official GitHub Repository](https://catalog.data.gov/dataset) to make this report reproducible.
+
+- [time_series_covid19_confirmed_US.csv](https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv)
+- [time_series_covid19_deaths_US.csv](https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv)
+
+
+```{r}
+us_by_state_confirmed_csv <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
+us_by_state_deaths_csv <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv")
+```
+
+I keep this COVID-19 Data in `tibble` objects for efficient manipulation.
+
+```{r}
+us_by_state_confirmed_all <- tibble(us_by_state_confirmed_csv)
+us_by_state_confirmed_all
+
+us_by_state_deaths_all <- tibble(us_by_state_deaths_csv)
+us_by_state_deaths_all
+```
+
+### Tidying and Transforming
+
+To demonstrate how we can complete all steps in the data science process, I will tidy up and transform this COVID-19 Data step-by-step. Let's see how it goes.
+
+#### Narrowing Down
+
+First, since I will not utilize the information in the following columns in this paper, I will remove them from both data frames to prevent extra memory consumption.
+
+- `UID`
+- `iso2`
+- `iso3`
+- `code3`
+- `FIPS`
+- `Admin2`
+- `Lat`
+- `Long_`
+- `Combined_Key`
+
+```{r}
+us_by_state_confirmed_selected <- us_by_state_confirmed_all %>%
+  select(-UID,
+         -iso2,
+         -iso3,
+         -code3,
+         -FIPS,
+         -Admin2,
+         -Lat,
+         -Long_,
+         -Combined_Key)
+us_by_state_deaths_selected <- us_by_state_deaths_all %>%
+  select(-UID,
+         -iso2,
+         -iso3,
+         -code3,
+         -FIPS,
+         -Admin2,
+         -Lat,
+         -Long_,
+         -Combined_Key)
+```
+
+#### Renaming
+
+Second, although it's my preference, I redefine the column names shorter using camel case notation to make it easier to type and handle.
+
+```{r}
+us_by_state_confirmed_renamed <- us_by_state_confirmed_selected %>%
+  rename(State = Province_State,
+         Country = Country_Region)
+us_by_state_deaths_renamed <- us_by_state_deaths_selected %>%
+  rename(State = Province_State,
+         Country = Country_Region)
+```
+
+Here is what we have got so far.
+
+```{r}
+us_by_state_confirmed_renamed
+us_by_state_deaths_renamed
+```
+
+#### Pivotting
+
+Third, we must transform every date column into a separate dedicated row to allow us to visualize these data in time-series graphs later.
+
+```{r}
+us_by_state_confirmed_transformed <- us_by_state_confirmed_renamed %>%
+  pivot_longer(cols = -c(State, Country),
+               names_to = "Date",
+               values_to = "Cases")
+us_by_state_deaths_transformed <- us_by_state_deaths_renamed %>%
+  pivot_longer(cols = -c(State, Country, Population),
+               names_to = "Date",
+               values_to = "Deaths")
+```
+
+#### Aggregating
+
+Since we only have accumulated by-state numbers of COVID-19 cases and deaths in the data frames, we have to synthesize the numbers for newly reported, daily occurred cases and fatalities by calculations.
+
+```{r message=FALSE}
+
+us_by_state_confirmed_aggregated <- us_by_state_confirmed_transformed %>%
+  mutate(Date = str_remove(Date, "X")) %>%
+  mutate(Date = mdy(Date)) %>%
+  group_by(State, Date) %>%
+  summarize(Cases = sum(Cases)) %>%
+  mutate(PrevCases = lag(Cases),
+         NewCases = ifelse(is.na(PrevCases), Cases, Cases - PrevCases)) %>%
+  select(-c(PrevCases)) %>%
+  arrange(State, Date)
+us_by_state_deaths_aggregated <- us_by_state_deaths_transformed %>%
+  mutate(Date = str_remove(Date, "X")) %>%
+  mutate(Date = mdy(Date)) %>%
+  group_by(State, Date) %>%
+  summarize(Deaths = sum(Deaths),
+            Population = max(Population)) %>%
+  mutate(PrevDeaths = lag(Deaths),
+         NewDeaths = ifelse(is.na(PrevDeaths), Deaths, Deaths - PrevDeaths)) %>%
+  select(-c(PrevDeaths)) %>%
+  arrange(State, Date)
+
+```
+
+Again, here is what we have got so far.
+
+```{r}
+us_by_state_confirmed_aggregated
+us_by_state_deaths_aggregated
+```
+
+#### Combining
+
+So far, we have been tidying up our data stored in two separate data frames; one is for COVID-19 cases, and the other is for deaths.
+
+Now, it's time to combine them into one with the `cbind()` function. But, you may wonder, "Shouldn't we use the `full_join()` function instead of `cbind()`?" And the answer is, "Yes, basically, we should."
+
+However, the `full_join()` function requires much more computational resources than `cbind()` and might lead to a knitting failure due to a memory shortage depending on the runtime environment. Here, we can safely use the `cbind()` function for our purpose. So I will go with it for now.
+
+```{r}
+df1 <- us_by_state_confirmed_aggregated %>%
+  arrange(State, Date)
+df2 <- us_by_state_deaths_aggregated %>%
+  rename(State2 = State, Date2 = Date) %>%
+  arrange(State2, Date2)
+us_by_state_combined <- cbind(df1, df2)
+```
+
+#### Validating
+
+We can check whether there are any inconsistencies by querying such rows that have inconsistent keys. As shown below, no such rows exist; we could compile them without ruining them.
+
+```{r}
+us_by_state_combined %>% filter(State != State2 | Date != Date2)
+```
+
+#### Finishing
+
+Finally, I will organize our data, filtering out useless rows and columns and sorting in time-ascending order.
+
+```{r}
+us_by_state <- us_by_state_combined %>%
+  filter(Cases != 0 | NewCases != 0 | Deaths != 0 | NewDeaths != 0) %>%
+  select(-c(State2, Date2)) %>%
+  select(Date, State, Population, everything()) %>%
+  arrange(Date, State)
+us_by_state
+```
+
+********************************************************************************
+
+## Analyzing Data with Visualization
+
+### Visualizing of the Daily Number of New COVID-19 Cases and Deaths in the United States
+
+First, let's visualize the overall number of COVID-19 cases and deaths by plotting them over time by day and see what we get.
+
+```{r warning=FALSE}
+us_by_state %>%
+  group_by(Date) %>%
+  summarize(Cases = sum(Cases),
+            Deaths = sum(Deaths)) %>%
+  pivot_longer(cols = -c(Date),
+               names_to = "Kind",
+               values_to = "Count") %>%
+  ggplot(aes(x = Date, y = Count, color = Kind)) +
+  geom_line(linewidth = 1, alpha = 0.8) +
+  geom_point(size = 1, alpha = 0.8) +
+  scale_y_log10() +
+  labs(title = "Number of COVID-19 Cases and Deaths in the United States (2020 - 2023)",
+       x = "Date",
+       y = "Number of COVID-19 Cases/Deaths",
+       color = "Target Group") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+Continuing, I am going to plot the daily number of new cases reported for COVID-19. As can be seen, there are significant spikes at roughly six-month cycles.
+
+```{r warning=FALSE}
+us_by_state %>%
+  group_by(Date) %>%
+  summarize(NewCases = sum(NewCases)) %>%
+  pivot_longer(cols = -c(Date),
+               names_to = "Kind",
+               values_to = "Count") %>%
+  ggplot(aes(x = Date, y = Count, color = Kind)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_point(size = 0.8, alpha = 0.8) +
+  labs(title = "Daily Number of New COVID-19 Cases in the United States (2020 - 2023)",
+       x = "Date",
+       y = "Daily Number of New COVID-19 Cases",
+       color = "Target Group") +
+  theme_classic() +
+  theme(legend.position = "none")
+```
+
+Similarly, plotting the number of new deaths reported daily in COVID-19, we get a similar trend: roughly a semi-annual increase in deaths.
+
+```{r warning=FALSE}
+us_by_state %>%
+  group_by(Date) %>%
+  summarize(NewDeaths = sum(NewDeaths)) %>%
+  pivot_longer(cols = -c(Date),
+               names_to = "Kind",
+               values_to = "Count") %>%
+  ggplot(aes(x = Date, y = Count, color = Kind)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_point(size = 0.8, alpha = 0.8) +
+  labs(title = "Daily Number of New COVID-19 Deaths in the United States (2020 - 2023)",
+       x = "Date",
+       y = "Daily Number of New COVID-19 Deaths",
+       color = "Target Group") +
+  theme_classic() +
+  theme(legend.position = "none")
+```
+
+### Visualizing the COVID-19 Fatality Rate in the United States by Month
+
+Now, I will visualize how the fatality rate from COVID-19 infections in the US has changed over time from 2020 to 2023.
+
+In conjunction with the visualization of the observed data, I will plot the predicted values from a linear regression model that represents the fatality rate of COVID-19 infections in all US states as a function of a series of dates. The independent variable will be the date over time, and the dependent variable will be the fatality rate.
+
+By visualizing and modeling the fatality rate, I will be able to find whether we are acquiring immunity to COVID-19 and gaining effective resistance or not.
+
+```{r warning=FALSE, message=FALSE}
+df <- us_by_state %>%
+  mutate(Date = floor_date(Date, "month")) %>%
+  filter(Date >= ymd('2020-02-01')) %>%
+  group_by(Date) %>%
+  summarize(FatalityRate = sum(NewDeaths)/sum(NewCases))
+df %>%
+  pivot_longer(cols = -c(Date),
+               names_to = "Kind",
+               values_to = "Count") %>%
+  ggplot(aes(x = Date, y = Count, color = Kind)) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  geom_point(size = 0.8, alpha = 0.8) +
+  geom_smooth(data = df,
+              aes(y = FatalityRate, x = Date),
+              method = "lm",
+              se = TRUE,
+              color = alpha("darkred", 0.7)) +
+  labs(title = "COVID-19 Fatality Rate in the US by Month (2020 - 2023)",
+       x = "Date",
+       y = "Rate",
+       color = "Target Group") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+### Visualizing the COVID-19 Deaths and Cases vs. State Population
+
+As one more last visualization, I will plot a graph to picture the COVID-19 cases and deaths per state as a graph of state population vs. deaths and cases.
+I will also plot the predicted values from two linear regression models that represent the COVID-19 cases and deaths in the US as a function of a series of dates. The independent variable will be the date over time, and the dependent variable will be the number of cases and deaths.
+
+```{r warning=FALSE, message=FALSE}
+df <- us_by_state %>%
+  mutate(Date = floor_date(Date, "month")) %>%
+  filter(Date >= ymd('2020-02-01')) %>%
+  group_by(State) %>%
+  summarize(TotalDeaths = max(Deaths),
+            TotalCases = max(Cases),
+            Population = max(Population))
+df %>%
+  pivot_longer(cols = -c(State, Population),
+               names_to = "Indicator",
+               values_to = "Value") %>%
+  ggplot(aes(x = Population, y = Value, color = Indicator)) +
+  geom_point(size = 1, alpha = 0.8) +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_smooth(data = df,
+              aes(y = TotalCases, x = Population),
+              method = "lm",
+              se = TRUE,
+              color = alpha("darkred", 0.7)) +
+  geom_smooth(data = df,
+              aes(y = TotalDeaths, x = Population),
+              method = "lm",
+              se = TRUE,
+              color = alpha("darkgreen", 0.7)) +
+  labs(title = "COVID-19 Deaths/Cases vs State Population in the US (2020 - 2023)",
+       x = "State Population",
+       y = "Total Deaths/Cases in State",
+       color = "Target Group") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+```
+
+### Analysis and Thoughts
+
+#### Daily Number of New COVID-19 Cases and Deaths in the United States
+
+The first graph clearly shows that COVID-19 infections increased rapidly since the epidemic in early 2020.
+Although it is hard to see from the first graph, there was remarkable fluctuation over the period. We can see significant spikes at roughly six-month cycles in the second and third graphs. The cyclic wave of COVID-19 infections is quite intriguing, but I suspect the mechanism under the hood is far more complicated than it looks and maybe beyond this paper.
+
+#### COVID-19 Fatality Rate in the United States by Month
+
+The graph picturing the fatality rate with predicted lines by the model shows our acquisition of immunity to COVID-19, depicting our gaining effective resistance since the pandemic.
+
+#### COVID-19 Deaths and Cases vs. State Population
+
+The last graph lets me know people in the US are all nearly equally weak and equally strong to COVID-19. There are no significant differences between the states; the death count depends on the number of infections, not the state where we live. 
+
+*****
+
+## Conclusion
+
+In this report, I demonstrated how we can import, tidy, transform, visualize, and analyze open data available from the Johns Hopkins University GitHub Repository in a reproducible manner. The reproducibility sometimes fails due to unexpected runtime environment limitations like available memory footprint. I tried to make this Rmd document as reproducible as possible but found it more challenging than I thought.
+
+Speaking of the findings from the data analysis, I have observed the following:
+
+- Cyclic massive spikes of COVID-19 cases and deaths over the period
+-  Our acquisition of effective immunity resistance over time
+- Relevance of the number of cases and deaths with the state population
+
+The observations strongly stimulate my interest. I want to acquire enough skills to approach and analyze those things deeply.
+
+*****
+
+## Bias Identification
+
+The source data itself can be subject to a variety of biases. In particular, two major ones are possible: selection bias and information bias. I want to mention the strong possibility of selection bias, which implies that the sampling is not truly random but biased.
+
+According to a Wikipedia article, [COVID-19 testing in the United States](https://en.wikipedia.org/wiki/COVID-19_testing_in_the_United_States), only some suspicious patients/infected persons in the US were eligible for genetic testing for the COVID-19 virus until December 2020. However, determining who is "suspicious" is problematic because COVID-19 symptoms are similar to the common cold or influenza, and we also have a high rate of asymptomatic cases. Hence, the early data, especially early 2020, should be highly skewed.
+
+Even after the FDA approved the test for anyone with and without COVID-19 symptoms using a $30 rapid testing kit available without a prescription in December 2020, there was still possible bias. I suspect that not all people could buy or would be willing to buy and test themselves for COVID-19 infection.
+
+*****
+
+## APPENDIX
+
+### SessionInfo
+
+```{r}
+sessionInfo()
+```
+
