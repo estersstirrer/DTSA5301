@@ -19,8 +19,6 @@ If your browser does not handle the above links well, please visit [my github.co
 
 ## Abstract
 
-Reproducibility on data analysis with R is feasible, but the fundamental knowledge, skills, and careful implementations are required.
-
 Although the NYPD Shooting Incident Data revealed a significant increase beginning in May 2020 -- a rise potentially attributed to the COVID-19 pandemic, the BLM Movement, or both -- no discernible factors have been identified through this analysis with available data on victims and perpetrators. A more comprehensive analysis incorporating additional data is necessary to determine the underlying mechanism of this spike.
 
 ********************************************************************************
@@ -247,6 +245,13 @@ df <- nypd_sorted %>%
 df_before <- filter(df, BeforePandemic == TRUE)
 df_after <- filter(df, BeforePandemic == FALSE)
 
+plot_ShootingVictimsByRace
+plot_ShootingPerpetratorsByRace
+```
+
+Here, I want to go even further ragarding the victims race. Let's compare the percentage of victims from different racial groups before and after that spring. Here, we can also use linear regression models to visualize the trend, and let's see what happens.
+
+```{r message=FALSE, warning=FALSE}
 plot_MonthlyShootingBlackVictims <- df %>%
   filter(BeforePandemic == TRUE) %>%
   ggplot() +
@@ -271,6 +276,7 @@ plot_MonthlyShootingBlackVictims <- df %>%
        x = "Overall Monthly Victims (All Race)",
        y = "Monthly Shooting Victims (Black)",
        color = "Victim's Race")
+plot_MonthlyShootingBlackVictims
 
 plot_MonthlyShootingBlackHispanicVictims <- df %>%
   filter(BeforePandemic == TRUE) %>%
@@ -296,6 +302,33 @@ plot_MonthlyShootingBlackHispanicVictims <- df %>%
        x = "Overall Monthly Victims (All Race)",
        y = "Monthly Shooting Victims (Black Hispanic)",
        color = "Victim's Race")
+plot_MonthlyShootingBlackHispanicVictims
+
+plot_MonthlyShootingWhiteHispanicVictims <- df %>%
+  filter(BeforePandemic == TRUE) %>%
+  ggplot() +
+  geom_point(data = df_before, aes(y = VicWhiteHispanic, x = Overall), color="green", alpha=0.7) +
+  geom_point(data = df_after, aes(y = VicWhiteHispanic, x = Overall), color="red", alpha=0.7) +
+  geom_smooth(data = df_before,
+              aes(y = VicWhiteHispanic, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkgreen",
+              alpha=0.7) +
+  geom_smooth(data = df_after,
+              aes(y = VicWhiteHispanic, x = Overall),
+              method = "lm",
+              se = FALSE,
+              color="darkred",
+              alpha=0.7) +
+  scale_y_continuous(limits = c(0, 300)) +
+  scale_x_continuous(limits = c(0, 350)) +
+  theme_classic() +
+  labs(title = "Shooting White Hispanic Victims by Month (2006 - 2022)",
+       x = "Overall Monthly Victims (All Race)",
+       y = "Monthly Shooting Victims (White Hispanic)",
+       color = "Victim's Race")
+plot_MonthlyShootingWhiteHispanicVictims
 
 plot_MonthlyShootingWhiteVictims <- df %>%
   filter(BeforePandemic == TRUE) %>%
@@ -321,6 +354,7 @@ plot_MonthlyShootingWhiteVictims <- df %>%
        x = "Overall Monthly Victims (All Race)",
        y = "Monthly Shooting Victims (White)",
        color = "Victim's Race")
+plot_MonthlyShootingWhiteVictims
 
 plot_MonthlyShootingAsianPacificIslanderVictims <- df %>%
   filter(BeforePandemic == TRUE) %>%
@@ -346,6 +380,7 @@ plot_MonthlyShootingAsianPacificIslanderVictims <- df %>%
        x = "Overall Monthly Victims (All Race)",
        y = "Monthly Shooting Victims (Asian/Pacific Islander)",
        color = "Victim's Race")
+plot_MonthlyShootingAsianPacificIslanderVictims
 
 plot_MonthlyShootingNativeAmericanNativeAlaskanVictims <- df %>%
   filter(BeforePandemic == TRUE) %>%
@@ -371,13 +406,6 @@ plot_MonthlyShootingNativeAmericanNativeAlaskanVictims <- df %>%
        x = "Overall Monthly Victims (All Race)",
        y = "Monthly Shooting Victims (Native American/Native Alaskan)",
        color = "Victim's Race")
-
-plot_ShootingVictimsByRace
-plot_ShootingPerpetratorsByRace
-plot_MonthlyShootingBlackVictims
-plot_MonthlyShootingBlackHispanicVictims
-plot_MonthlyShootingWhiteVictims
-plot_MonthlyShootingAsianPacificIslanderVictims
 plot_MonthlyShootingNativeAmericanNativeAlaskanVictims
 ```
 
@@ -386,6 +414,8 @@ Please note that every <span style="color:green">**green**</span> point in the *
 Whereas the points represent the actual observed data, the **solid lines** drawn over observed data points in those graphs show the approximate prediction from the linear regression models.
 
 We can see no significant difference between before and after the Pandemic in any graphs for any race.
+
+The racial proportions stayed consistent across all groups - Black, White, Black Hispanic, White Hispanic, Native American or Native Alaskan, and Asian or Pacific Islander.
 
 ##### Plotting By Sex
 
@@ -492,16 +522,14 @@ In contrast, every <span style="color:red">**red**</span> point in the chart rep
 
 Whereas the points represent the actual observed data, the **solid lines** drawn over observed data points in those graphs show the approximate prediction from the linear regression models.
 
-We can see no significant difference between before and after the Pandemic in any graphs for  females and males.
 
 ### Thoughts about the Possibility of the Root Cause
 
 From the analysis of the aspect of victims' and perpetrators' attributes, I have found nothing significant that could be attributed to the spike in shooting incidents in New York in May 2020. The race and sex ratios of victims and perpetrators did not change significantly.
 
-Conversely, I can also say that the NYPD Shooting Incident Data used in this analysis does not indicate that any particular factor rooted in a specific race or sex is responsible for the surge in New York shootings.
+I have found that the NYPD Shooting Incident Data used in this analysis does not indicate that any particular factor rooted in a specific race or sex is responsible for the surge in New York shootings.
 
-Rather, other factors (social unrest, unemployment, etc.) may be the cause; thus, a larger-scale analysis that combines the data used in this analysis and other data is required.
-
+Instead, other factors (Economic Hardship, Mental Health Issues, or even Police Resources Shortage) may be the cause; thus, a larger-scale analysis that combines the data used in this analysis and other data is required.
 
 *****
 
@@ -510,21 +538,26 @@ Rather, other factors (social unrest, unemployment, etc.) may be the cause; thus
 In this report, I demonstrated how we can import, tidy, visualize, and analyze open data available from the government site in a reproducible manner.
 I found the reproducibility possible but acknowledged that fundamental knowledge, basic skills, and meticulous implementations are necessary.
 
-Speaking of the findings from the data analysis, I have found nothing significant that could be attributed to the spike in the NY shootings in May 2020 from any of the attributes of victims and perpetrators.
+Speaking of the findings from the data analysis, I have found nothing significant that could be attributed to the spike in the NY shootings in May 2020 from any of the attributes of victims and perpetrators, which left us a big question again – if the issue is not rooted in racial matters, to what can we attribute the pronounced rise in shootings?
 
-As mentioned, other factors (social unrest, unemployment, etc.) may be the reason. Therefore, a larger-scale analysis with the NYPD Shooting Incident Data and other reliable data is desired.
+Regrettably, I do not possess a definitive answer. It is plausible to hypothesize that a confluence of factors is at play, such as economic downturns, challenges in mental health, or a diminution of police resources during that particular period due to unforeseen circumstances.
+
+Further research must be conducted on this matter. I hope comprehensive analyses of extensive datasets in the future will elucidate this problem.
 
 *****
 
 ## Bias Identification
 
-Eliminating bias in data analysis is challenging; this report is no exception. I assumed that the COVID-19 and/or the BLM Movement Pandemic caused the May 2020 spike in New York shootings and attempted to analyze the specific factors further.
-However, that assumption itself, while confident based on the majority of people's experience, is still a bias based on preconceived notions.
-However, even if the initial hypothesis contains bias, if we proceed with a thorough analysis of the specific factors, we will eventually arrive at the actual root cause of the phenomenon.
-So, I considered that assumption to be nothing more than a trigger and be acceptable in this report.
+Eliminating bias in data analysis is challenging; this report is no exception.
 
-Other biases could also be contained in the shooting data itself. For example, "race" in the NYPD shooting count data was classified into six categories, except those marked unknown.
-In reality, however, the classification of New Yorkers into six races needs to be revised and improved. Biases already infused in the first place during the compilation are even harder to correct or eliminate. Although this report does not explicitly address potential biases in the data, it is hoped that more reliable data will be collected and a more sophisticated analysis will be attempted.
+The U.S. Census breaks down race into six main categories: White, Black or African American, Native American or Native Alaskan, Asian, Native Hawaiian or other Pacific Islander, and Other. This dataset on NYC shootings has six categories, too, but they don't exactly line up with the Census. While some races like Black, White, and Native American or Native Alaskan are consistent, this NYPD dataset introduces categories like "White Hispanic" and "Black Hispanic," combines Asians and Pacific Islanders into one group, leaves out the "Other" class, and adds an "Unknown" label.
+
+This brings up some questions about the classifications. How do they distinguish "White Hispanic" from just "White" in terms of race? Why are Asians, despite being such a diverse group with over 4 billion people, all grouped under one category? And where do mixed-race individuals fit in?
+
+Whether we're looking at the Census data or the NYPD data, it seems overly simplistic to reduce race to just these six categories.
+
+Additionally, you might be wondering: Who set these racial categories at the scene of the incident? Was it based on how the individual identified themselves? If the person is no longer alive, who decides their race? Was it determined by onlookers? What standards were used?
+It's clear that this dataset has its biases. Thus, as this analysis is based on data with built-in biases influencing our conclusions, we must keep that perspective.
 
 *****
 
